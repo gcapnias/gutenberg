@@ -287,6 +287,12 @@ function gutenberg_register_entity_view_config_filters_7_2() {
 		1
 	);
 	add_filter(
+		gutenberg_get_entity_view_config_hook_name( 'postType', 'wp_block' ),
+		'_gutenberg_show_excerpt_placeholder_when_empty',
+		6,
+		1
+	);
+	add_filter(
 		gutenberg_get_entity_view_config_hook_name( 'postType', 'wp_template' ),
 		'_gutenberg_add_reading_settings_to_wp_template_view_config',
 		6,
