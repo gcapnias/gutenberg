@@ -5,6 +5,7 @@
 ### Bug Fixes
 
 -   `focusable.find`: Return linked image-map areas when their mapped image is visible and outside an inert subtree ([#82736](https://github.com/WordPress/gutenberg/pull/82736)).
+-   `getRectangleFromRange`: Measure a collapsed range that has no rectangles from the content around it instead of inserting a temporary text node, which rewrote the DOM under the caret ([#82911](https://github.com/WordPress/gutenberg/pull/82911)).
 
 ## 4.55.0 (2026-09-10)
 

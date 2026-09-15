@@ -118,23 +118,99 @@ export default function getRectangleFromRange( range ) {
 		}
 	}
 
-	let rect = rects[ 0 ];
+	const rect = rects[ 0 ];
 
-	// If the collapsed range starts (and therefore ends) at an element node,
-	// `getClientRects` can be empty in some browsers. This can be resolved
-	// by adding a temporary text node with zero-width space to the range.
-	//
-	// See: https://stackoverflow.com/a/6847328/995445
+	// A collapsed range at an element node or in an empty text node has no
+	// rectangles in some browsers.
 	if ( ! rect || rect.height === 0 ) {
-		assertIsDefined( ownerDocument, 'ownerDocument' );
-		const padNode = ownerDocument.createTextNode( '\u200b' );
-		// Do not modify the live range.
-		range = range.cloneRange();
-		range.insertNode( padNode );
-		rect = range.getClientRects()[ 0 ];
-		assertIsDefined( padNode.parentNode, 'padNode.parentNode' );
-		padNode.parentNode.removeChild( padNode );
+		return getRectangleFromNeighbours( range );
 	}
 
 	return rect;
+}
+
+/**
+ * Measures a collapsed range that has no rectangles of its own from the
+ * rendered content around it, without changing the DOM: the position is at
+ * the left edge of what follows it, or the right edge of what precedes it,
+ * within the same parent. Falls back to the left edge of the parent's box.
+ * Inserting a temporary text node to measure would rewrite the tree under
+ * the caret, which drops a keystroke that is being inserted on iOS.
+ *
+ * @param {Range} range The collapsed range.
+ *
+ * @return {DOMRect?} The rectangle.
+ */
+function getRectangleFromNeighbours( range ) {
+	const { startContainer, startOffset } = range;
+	const { ownerDocument } = startContainer;
+	assertIsDefined( ownerDocument, 'ownerDocument' );
+	const { defaultView } = ownerDocument;
+	assertIsDefined( defaultView, 'defaultView' );
+
+	const isText = startContainer.nodeType === startContainer.TEXT_NODE;
+	const parent = isText ? startContainer.parentNode : startContainer;
+	assertIsDefined( parent, 'parent' );
+	const children = /** @type {Node[]} */ ( Array.from( parent.childNodes ) );
+	// The index of the first child after the position.
+	const index = isText
+		? children.indexOf( startContainer ) +
+		  ( startOffset === /** @type {Text} */ ( startContainer ).length
+				? 1
+				: 0 )
+		: startOffset;
+
+	const caretRect = ( /** @type {DOMRect} */ box, atEnd = false ) =>
+		new defaultView.DOMRect(
+			atEnd ? box.right : box.left,
+			box.top,
+			0,
+			box.height
+		);
+
+	/**
+	 * The first rectangle of a node's rendered content, from its start or
+	 * its end.
+	 *
+	 * @param {Node}    node  The node.
+	 * @param {boolean} atEnd Whether to measure the end of the node.
+	 *
+	 * @return {DOMRect?} The rectangle.
+	 */
+	const measure = ( node, atEnd ) => {
+		let boxes;
+		if ( node.nodeType === node.TEXT_NODE ) {
+			const probe = ownerDocument.createRange();
+			const length = /** @type {Text} */ ( node ).length;
+			probe.setStart( node, atEnd ? length : 0 );
+			probe.setEnd( node, atEnd ? length : 0 );
+			boxes = probe.getClientRects();
+		} else if ( node.nodeType === node.ELEMENT_NODE ) {
+			boxes = /** @type {Element} */ ( node ).getClientRects();
+		}
+		const box = boxes && ( atEnd ? boxes[ boxes.length - 1 ] : boxes[ 0 ] );
+		return box && box.height > 0 ? caretRect( box, atEnd ) : null;
+	};
+
+	for ( let i = index; i < children.length; i++ ) {
+		const measured = measure( children[ i ], false );
+		if ( measured ) {
+			return measured;
+		}
+	}
+	for ( let i = index - 1; i >= 0; i-- ) {
+		const measured = measure( children[ i ], true );
+		if ( measured ) {
+			return measured;
+		}
+	}
+
+	if ( parent.nodeType === parent.ELEMENT_NODE ) {
+		const box = /** @type {Element} */ ( parent ).getBoundingClientRect();
+		if ( box.height > 0 ) {
+			return caretRect( box );
+		}
+	}
+
+	return null;
 }
